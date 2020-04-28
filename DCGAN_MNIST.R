@@ -263,7 +263,8 @@ train <- function(models, x_train, params){
     # Generate fake images from noise using generator - generate noise using uniform
     # distribution:
     noise <- base::matrix(data = stats::runif(n = batch_size * latent_size, min = -1, max = 1), nrow = batch_size, ncol = latent_size); dim(noise)
-    fake_images <- generator %>% stats::predict(noise)
+    fake_images <- generator %>% 
+      stats::predict(noise)
     
     # real + fake images = 1 batch of train data:
     x <- keras::k_concatenate(tensors = base::list(real_images, fake_images), axis = 1)
@@ -307,9 +308,9 @@ train <- function(models, x_train, params){
   # Save the model after training the generator (.h5 and .hdf5). The trained 
   # generator can be reloaded for future MNIST digit generation.
   generator %>%
-    keras::save_model_hdf5(base::paste0(model_name, ".h5"))
+    keras::save_model_hdf5(base::paste(model_name, base::paste0(model_name, ".h5"), sep = "/"))
   generator %>%
-    keras::save_model_hdf5(base::paste0(model_name, ".hdf5"))}
+    keras::save_model_hdf5(base::paste(model_name, base::paste0(model_name, ".hdf5"), sep = "/"))}
 
 # ------------------------------------------------------------------------------
 # Train DCGAN model:
@@ -317,10 +318,64 @@ keras::k_clear_session()
 build_and_train_models()
 
 # ------------------------------------------------------------------------------
+# Display result:
+plot_final_images <- function(generator,
+                              noise_input){
+  
+  # Display and save results to show the generator output evolves during training.
+  
+  # Arguments:
+  # * generator (Model): trained generator
+  # * noise input (Tensor): 16 noise vectors with shape equal latent_size
+  
+  # * model_name: folder with saved plots
+  
+  # Returns:
+  # * png files: Generator outputs
+  
+  
+  # Predict with generator noise input:
+  images <- generator %>%
+    predict(noise_input)
+  
+  # Extract helpful features:
+  num_images <- base::dim(images)[1]
+  image_size <- base::dim(images)[2]
+  rows <- base::sqrt(base::dim(noise_input)[1])
+  
+  # Display plots:
+  plots <- list()
+  
+  for (j in 1:num_images){
+    images[j,,,] %>%
+      tibble::as_tibble() %>%
+      dplyr::mutate(row = dplyr::row_number()) %>%
+      tidyr::pivot_longer(cols = dplyr::starts_with("V"),
+                          names_to = "col",
+                          values_to = "value") %>%
+      dplyr::mutate(col = stringr::str_sub(col, 2, -1),
+                    col = base::factor(col, levels = 1:image_size, ordered = TRUE),
+                    row = base::factor(row, levels = 1:image_size, ordered = TRUE)) %>%
+      ggplot2::ggplot(data = ., mapping = ggplot2::aes(x = col, y = row, fill = value)) +
+      ggplot2::geom_tile() +
+      ggplot2::scale_fill_gradient2(low = "white", high = "black", limits = base::c(0, 1)) +
+      ggplot2::theme(plot.title = element_blank(),
+                     axis.text.y = element_blank(),
+                     axis.text.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     axis.title.x = element_blank(),
+                     axis.ticks = element_line(size = 1, color = "black", linetype = "solid"),
+                     axis.ticks.length = unit(0, "cm"),
+                     panel.grid.major.x = element_blank(),
+                     panel.grid.major.y = element_blank(),
+                     panel.grid.minor.x = element_blank(),
+                     panel.grid.minor.y = element_blank(),
+                     plot.caption = element_blank(),
+                     legend.position = "none") -> plots[[j]]}
+  plots <- base::do.call(grid.arrange, base::c(plots, ncol = rows))}
 
-
-
-
-
-
+plot_final_images(generator = keras::load_model_hdf5("dcgan.hdf5", compile = FALSE),
+                  noise_input = base::matrix(data = stats::runif(n = 64 * 100, min = -1, max = 1), nrow = 64, ncol = 100))
+# ------------------------------------------------------------------------------
+# 
   
