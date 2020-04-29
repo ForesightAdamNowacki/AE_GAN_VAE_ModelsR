@@ -130,7 +130,7 @@ build_and_train_models <- function(){
   
   # Network parameters:
   model_name <- "cgan"
-  latent_size <- 100
+  latent_size <- 1000
   batch_size <- 512
   train_steps <- 25000
   lr <- 2e-4
