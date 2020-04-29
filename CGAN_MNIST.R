@@ -480,12 +480,12 @@ for (i in 1:10){
 
 # ------------------------------------------------------------------------------
 # Training visualization:
-base::list.files(path = base::paste(base::getwd(), "cgan", sep = "/"), pattern = "*00.png", full.names = TRUE) %>%
+base::list.files(path = base::paste(base::getwd(), "cgan", sep = "/"), pattern = "*000.png", full.names = TRUE) %>%
   stringr::str_sort(numeric = TRUE) %>%
   magick::image_read() %>%
   magick::image_join() %>%
   magick::image_animate(delay = 0.5, loop = 1) %>%
-  # magick::image_write_video(base::paste("cgan", "cgan_training.gif", sep = "/"))
-  magick::image_write(base::paste("cgan", "cgan_training.gif", sep = "/"))
+  magick::image_write_video(base::paste("cgan", "cgan_training.gif", sep = "/"))
+  #magick::image_write(base::paste("cgan", "cgan_training.gif", sep = "/"))
 # ------------------------------------------------------------------------------
   
