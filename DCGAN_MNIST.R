@@ -1,5 +1,5 @@
 # ------------------------------------------------------------------------------
-# GENERATIVE ADVERSARIAL MODEL
+# DEEP CONVOLUTIONAL GENERATIVE ADVERSARIAL MODEL
 # ------------------------------------------------------------------------------
 # Data:
 # https://www.kaggle.com/c/digit-recognizer
@@ -26,7 +26,7 @@ keras::k_clear_session()
 
 # ------------------------------------------------------------------------------
 # Generator:
-build_generator <- function(latent_size, image_size){
+build_generator <- function(inputs, image_size){
   
   # Build a Generator Model
   # Stack of Batch Normalization - ReLU activations - Conv2DTranspose layers to 
@@ -34,15 +34,14 @@ build_generator <- function(latent_size, image_size){
   
   # Arguments:
   # * inputs (Layer): Input layer of the generator (z-vector)
-  # * image_size: Target size of one side (assuming square image)
+  # * image_size (Int): Target size of one side (assuming square image)
   
   # Returns:
   # * Model: Generator Model
   
   image_resize <- image_size %/% 4
   
-  generator_input <-  keras::layer_input(shape = base::c(latent_size))
-  generator_output <- generator_input %>%
+  generator_output <- inputs %>%
     keras::layer_dense(units = image_resize * image_resize * 128, activation = "linear") %>%
     keras::layer_reshape(target_shape = base::c(image_resize, image_resize, 128)) %>%
     keras::layer_batch_normalization() %>%
@@ -59,10 +58,13 @@ build_generator <- function(latent_size, image_size){
     keras::layer_conv_2d_transpose(filters = 1, kernel_size = 5, strides = 1, padding = "same", activation = "linear") %>%
     keras::layer_activation(activation = "sigmoid")
   
-  generator <- keras::keras_model(inputs = generator_input, outputs = generator_output)
+  generator <- keras::keras_model(inputs = inputs, outputs = generator_output)
   base::return(generator)}
 
-# build_generator(latent_size = 100, image_size = 28)
+keras::k_clear_session()
+test_build_generator <- build_generator(inputs = keras::layer_input(shape = base::c(100)),
+                                        image_size = 28); test_build_generator
+deepviz::plot_model(test_build_generator)
 
 # ------------------------------------------------------------------------------
 # Discriminator:
@@ -78,8 +80,8 @@ build_discriminator <- function(inputs){
   # Returns:
   # * Model: Discriminator Model
   
-  discriminator_input <- keras::layer_input(shape = inputs)
-  discriminator_output <- discriminator_input %>%
+
+  discriminator_output <- inputs %>%
     keras::layer_activation_leaky_relu(alpha = 0.2) %>%
     keras::layer_conv_2d(filters = 32, kernel_size = 5, strides = 2, padding = "same") %>%
     keras::layer_activation_leaky_relu(alpha = 0.2) %>%
@@ -92,11 +94,13 @@ build_discriminator <- function(inputs){
     keras::layer_dense(units = 1, activation = "linear") %>%
     keras::layer_activation(activation = "sigmoid")
     
-  discriminator <- keras::keras_model(inputs = discriminator_input, outputs = discriminator_output)
+  discriminator <- keras::keras_model(inputs = inputs, outputs = discriminator_output)
   
   base::return(discriminator)}
 
-# build_discriminator(inputs = base::c(28, 28, 1))
+keras::k_clear_session()
+test_build_discriminator <- build_discriminator(inputs = keras::layer_input(shape = base::c(28, 28, 1))); test_build_discriminator
+deepviz::plot_model(test_build_discriminator)
 
 # ------------------------------------------------------------------------------
 # Build and train models:
@@ -113,15 +117,16 @@ build_and_train_models <- function(){
   # Network parameters:
   model_name <- "dcgan"
   latent_size <- 100
-  batch_size <- 256
-  train_steps <- 40000 
+  batch_size <- 512
+  train_steps <- 25000 
   lr <- 2e-4
   decay <- 6e-8
   input_shape <- base::c(image_size, image_size, 1)
   
   # Build discriminator model:
   optimizer <- keras::optimizer_rmsprop(lr = lr, decay = decay)
-  discriminator <- build_discriminator(inputs = input_shape)
+  inputs <- keras::layer_input(shape = input_shape, name = "Discriminator_Input")
+  discriminator <- build_discriminator(inputs = inputs)
   discriminator %>% keras::compile(loss = "binary_crossentropy",
                                    optimizer = optimizer,
                                    metrics = base::c("accuracy"))
@@ -129,7 +134,8 @@ build_and_train_models <- function(){
     base::summary()
   
   # Build generator model:
-  generator <- build_generator(latent_size = latent_size, image_size = image_size)
+  inputs <- keras::layer_input(shape = base::c(latent_size), name = "Z_input")
+  generator <- build_generator(inputs = inputs, image_size = image_size)
   generator %>% 
     base::summary()
   
@@ -138,8 +144,8 @@ build_and_train_models <- function(){
   discriminator$trainable <- FALSE
   
   # Adversarial = generator + discriminator
-  adversarial <- keras::keras_model(inputs = generator$inputs,
-                                    outputs = discriminator(generator(generator$inputs)))
+  adversarial <- keras::keras_model(inputs = inputs,
+                                    outputs = discriminator(generator(inputs)))
   adversarial %>% 
     keras::compile(loss = "binary_crossentropy",
                    optimizer = optimizer,
@@ -181,7 +187,7 @@ plot_images <- function(generator,
   # Extract helpful features:
   num_images <- base::dim(images)[1]
   image_size <- base::dim(images)[2]
-  rows <- base::sqrt(base::dim(noise_input)[1])
+  rows <- base::ceiling(base::sqrt(base::dim(noise_input)[1]))
   
   # Display plots:
   plots <- list()
@@ -194,8 +200,8 @@ plot_images <- function(generator,
                           names_to = "col",
                           values_to = "value") %>%
       dplyr::mutate(col = stringr::str_sub(col, 2, -1),
-                    col = base::factor(col, levels = 1:image_size, ordered = TRUE),
-                    row = base::factor(row, levels = 1:image_size, ordered = TRUE)) %>%
+                    col = base::as.numeric(col),
+                    row = base::as.numeric(row) * (-1)) %>%
       ggplot2::ggplot(data = ., mapping = ggplot2::aes(x = col, y = row, fill = value)) +
       ggplot2::geom_tile() +
       ggplot2::scale_fill_gradient2(low = "white", high = "black", limits = base::c(0, 1)) +
@@ -215,7 +221,7 @@ plot_images <- function(generator,
   plots <- base::do.call(grid.arrange, base::c(plots, ncol = rows))
   
   # Save plots:
-  ggplot2::ggsave(filename, plots)
+  ggplot2::ggsave(filename, plots, units = "cm", width = 25, height = 25)
   log_image <- base::paste("Plot saved:", filename)  
   base::print(log_image)}
 
@@ -244,11 +250,18 @@ train <- function(models, x_train, params){
   save_interval <- 1000
   
   # The noise vector to see how the generator output evolves during training:
-  noise_input <- base::matrix(data = stats::runif(n = 64 * latent_size, min = -1, max = 1), nrow = 64, ncol = latent_size)
+  numbers <- 100
+  noise_input <- base::matrix(data = stats::runif(n = numbers * latent_size, min = -1, max = 1), nrow = numbers, ncol = latent_size)
 
   # Number of elements in train dataset:
   train_size <- base::dim(x_train)[1]
 
+  # Save results:
+  discriminator_loss_results <- base::numeric(train_steps)
+  discriminator_accuracy_results <- base::numeric(train_steps)
+  adversarial_loss_results <- base::numeric(train_steps)
+  adversarial_accuracy_results <- base::numeric(train_steps)
+  
   for (i in 1:train_steps){
     
     # Train the discriminator for 1 batch: 
@@ -299,6 +312,12 @@ train <- function(models, x_train, params){
     log <- base::paste(discriminator_log, adversarial_log, sep = " | ")
     base::print(log)
     
+    # Save model results:
+    discriminator_loss_results[i] <- discriminator_loss
+    discriminator_accuracy_results[i] <- discriminator_acc
+    adversarial_loss_results[i] <- adversarial_loss
+    adversarial_accuracy_results[i] <- adversarial_acc
+    
     if (i %% save_interval == 0){
       plot_images(generator = generator,
                   noise_input = noise_input,
@@ -308,9 +327,25 @@ train <- function(models, x_train, params){
   # Save the model after training the generator (.h5 and .hdf5). The trained 
   # generator can be reloaded for future MNIST digit generation.
   generator %>%
-    keras::save_model_hdf5(base::paste(model_name, base::paste0(model_name, ".h5"), sep = "/"))
+    keras::save_model_hdf5(base::paste(model_name, base::paste0(model_name, "_generator.h5"), sep = "/"))
   generator %>%
-    keras::save_model_hdf5(base::paste(model_name, base::paste0(model_name, ".hdf5"), sep = "/"))}
+    keras::save_model_hdf5(base::paste(model_name, base::paste0(model_name, "_generator.hdf5"), sep = "/"))
+  
+  # Save the discriminator model:
+  discriminator %>%
+    keras::save_model_hdf5(base::paste(model_name, base::paste0(model_name, "_discriminator.h5"), sep = "/"))
+  discriminator %>%
+    keras::save_model_hdf5(base::paste(model_name, base::paste0(model_name, "_discriminator.hdf5"), sep = "/"))
+  
+  # Save results - loss and accuracy for discriminator and adversarial model:
+  results <- base::list(discriminator_loss_results = discriminator_loss_results,
+                        discriminator_accuracy_results = discriminator_accuracy_results,
+                        adversarial_loss_results = adversarial_loss_results,
+                        adversarial_accuracy_results = adversarial_accuracy_results)
+  
+  results <- results %>%
+    tibble::as_tibble() %>%
+    readr::write_csv(base::paste(model_name, base::paste0(model_name, ".csv"), sep = "/"))}
 
 # ------------------------------------------------------------------------------
 # Train DCGAN model:
@@ -321,18 +356,8 @@ build_and_train_models()
 # Display result:
 plot_final_images <- function(generator,
                               noise_input){
-  
-  # Display and save results to show the generator output evolves during training.
-  
-  # Arguments:
-  # * generator (Model): trained generator
-  # * noise input (Tensor): 16 noise vectors with shape equal latent_size
-  
-  # * model_name: folder with saved plots
-  
-  # Returns:
-  # * png files: Generator outputs
-  
+
+  model_name <- "dcgan"
   
   # Predict with generator noise input:
   images <- generator %>%
@@ -354,8 +379,8 @@ plot_final_images <- function(generator,
                           names_to = "col",
                           values_to = "value") %>%
       dplyr::mutate(col = stringr::str_sub(col, 2, -1),
-                    col = base::factor(col, levels = 1:image_size, ordered = TRUE),
-                    row = base::factor(row, levels = 1:image_size, ordered = TRUE)) %>%
+                    col = base::as.numeric(col),
+                    row = base::as.numeric(row) * (-1)) %>%
       ggplot2::ggplot(data = ., mapping = ggplot2::aes(x = col, y = row, fill = value)) +
       ggplot2::geom_tile() +
       ggplot2::scale_fill_gradient2(low = "white", high = "black", limits = base::c(0, 1)) +
@@ -372,10 +397,59 @@ plot_final_images <- function(generator,
                      panel.grid.minor.y = element_blank(),
                      plot.caption = element_blank(),
                      legend.position = "none") -> plots[[j]]}
-  plots <- base::do.call(grid.arrange, base::c(plots, ncol = rows))}
+  plots <- base::do.call(grid.arrange, base::c(plots, ncol = rows))
+  base::setwd(base::paste("D:/GitHub/GANModelsR", model_name, sep = "/"))
+  ggplot2::ggsave(base::paste0(model_name, ".png"), plot = plots, units = "cm", width = 25, height = 25)
+  base::setwd("..")}
 
-plot_final_images(generator = keras::load_model_hdf5("dcgan.hdf5", compile = FALSE),
-                  noise_input = base::matrix(data = stats::runif(n = 64 * 100, min = -1, max = 1), nrow = 64, ncol = 100))
+numbers <- 100
+plot_final_images(generator = keras::load_model_hdf5("dcgan/dcgan_generator.hdf5", compile = FALSE),
+                  noise_input = base::matrix(data = stats::runif(n = numbers * 100, min = -1, max = 1), nrow = numbers, ncol = 100))
+
 # ------------------------------------------------------------------------------
-# 
-  
+# Training visualization:
+base::list.files(path = base::paste(base::getwd(), "dcgan", sep = "/"), pattern = "*000.png", full.names = TRUE) %>%
+  stringr::str_sort(numeric = TRUE) %>%
+  magick::image_read() %>%
+  magick::image_join() %>%
+  magick::image_animate(delay = 0.5, loop = 1) %>%
+  magick::image_write_video(base::paste("dcgan", "dcgan_training.gif", sep = "/"))
+
+# ------------------------------------------------------------------------------
+# Accuracy and Loss visualization:
+text_size <- 7
+readr::read_csv("dcgan/dcgan.csv") %>%
+  dplyr::mutate(iteration = dplyr::row_number()) %>%
+  tidyr::pivot_longer(cols = base::c("discriminator_loss_results", "discriminator_accuracy_results", "adversarial_loss_results", "adversarial_accuracy_results"),
+                      names_to = "type",
+                      values_to = "value") %>%
+  dplyr::mutate(model = base::ifelse(base::grepl("discriminator", type) == TRUE, "Discriminator", "Adversarial"),
+                metric = base::ifelse(base::grepl("accuracy", type) == TRUE, "Accuracy", "Loss"),
+                type = NULL) %>%
+  ggplot2::ggplot(data = ., mapping = ggplot2::aes(x = iteration, y = value)) +
+  ggplot2::geom_point(alpha = 0.5) +
+  ggplot2::geom_smooth(se = FALSE) +
+  ggplot2::facet_wrap(metric ~ model, scales = "free") + 
+  ggplot2::labs(x = "Iteration", y = "Value", title = "DCGAN Model") +
+  ggplot2::theme(plot.title = element_text(size = text_size, color = "black", face = "bold", hjust = 0.5, vjust = 0.5),
+                 axis.text.y = element_text(size = text_size, color = "black", face = "plain"),
+                 axis.text.x = element_text(size = text_size, color = "black", face = "plain"),
+                 axis.title.y = element_text(size = text_size, color = "black", face = "bold"),
+                 axis.title.x = element_text(size = text_size, color = "black", face = "bold"),
+                 axis.ticks = element_line(size = 1, color = "black", linetype = "solid"),
+                 axis.ticks.length = unit(0.1, "cm"),
+                 plot.background = element_rect(fill = "gray80", color = "black", size = 1, linetype = "solid"),
+                 panel.background = element_rect(fill = "gray90", color = "black", size = 0.5, linetype = "solid"),
+                 panel.border = element_rect(fill = NA, color = "black", size = 0.5, linetype = "solid"),
+                 panel.grid.major.x = element_line(color = "black", linetype = "dotted"),
+                 panel.grid.major.y = element_line(color = "black", linetype = "dotted"),
+                 panel.grid.minor.x = element_line(linetype = "blank"),
+                 panel.grid.minor.y = element_line(linetype = "blank"),
+                 plot.caption = element_text(size = text_size, color = "black", face = "bold", hjust = 1),
+                 legend.position = "none",
+                 strip.background = element_rect(color = "black", fill = "gray80", size = 0.5, linetype = "solid"),
+                 strip.text = element_text(size = text_size, face = "bold")) -> dcgan_results_plot; dcgan_results_plot
+ggplot2::ggsave(base::paste("dcgan", "dcgan_results.png", sep = "/"), plot = dcgan_results_plot, units = "cm", width = 25, height = 25)
+
+# ------------------------------------------------------------------------------
+# https://github.com/ForesightAdamNowacki  

@@ -130,7 +130,7 @@ build_and_train_models <- function(){
   
   # Network parameters:
   model_name <- "cgan"
-  latent_size <- 1000
+  latent_size <- 100
   batch_size <- 512
   train_steps <- 25000
   lr <- 2e-4
@@ -210,7 +210,7 @@ plot_images <- function(generator,
   # Extract helpful features:
   num_images <- base::dim(images)[1]
   image_size <- base::dim(images)[2]
-  rows <- base::sqrt(base::dim(noise_input)[1])
+  rows <- base::ceiling(base::sqrt(base::dim(noise_input)[1]))
   
   # Display plots:
   plots <- list()
@@ -244,7 +244,7 @@ plot_images <- function(generator,
   plots <- base::do.call(grid.arrange, base::c(plots, ncol = rows))
   
   # Save plots:
-  ggplot2::ggsave(filename, plots)
+  ggplot2::ggsave(filename, plots, units = "cm", width = 25, height = 25)
   log_image <- base::paste("Plot saved:", filename)  
   base::print(log_image)}
 
@@ -273,7 +273,7 @@ train <- function(models, data, params){
   c(model_name) %<-% params[6]
   
   # The generator image is saved every 500 steps:
-  save_interval <- 100
+  save_interval <- 1000
   
   # The noise vector to see how the generator output evolves during training:
   numbers <- 100
@@ -466,7 +466,7 @@ test_generator <- function(generator,
   
   if (save == TRUE){
     base::setwd(base::paste("D:/GitHub/GANModelsR", model_name, sep = "/"))
-    ggplot2::ggsave(base::paste0(base::paste(class_label, model_name, sep = " "), ".png"), plot = plots)
+    ggplot2::ggsave(base::paste0(base::paste(class_label, model_name, sep = " "), ".png"), plot = plots, units = "cm", width = 25, height = 25)
     base::setwd("..")}}
 
 for (i in 1:10){
@@ -486,6 +486,42 @@ base::list.files(path = base::paste(base::getwd(), "cgan", sep = "/"), pattern =
   magick::image_join() %>%
   magick::image_animate(delay = 0.5, loop = 1) %>%
   magick::image_write_video(base::paste("cgan", "cgan_training.gif", sep = "/"))
-  #magick::image_write(base::paste("cgan", "cgan_training.gif", sep = "/"))
+
 # ------------------------------------------------------------------------------
-  
+# Accuracy and Loss visualization:
+text_size <- 7
+readr::read_csv("cgan/cgan.csv") %>%
+  dplyr::mutate(iteration = dplyr::row_number()) %>%
+  tidyr::pivot_longer(cols = base::c("discriminator_loss_results", "discriminator_accuracy_results", "adversarial_loss_results", "adversarial_accuracy_results"),
+                      names_to = "type",
+                      values_to = "value") %>%
+  dplyr::mutate(model = base::ifelse(base::grepl("discriminator", type) == TRUE, "Discriminator", "Adversarial"),
+                metric = base::ifelse(base::grepl("accuracy", type) == TRUE, "Accuracy", "Loss"),
+                type = NULL) %>%
+  ggplot2::ggplot(data = ., mapping = ggplot2::aes(x = iteration, y = value)) +
+  ggplot2::geom_point(alpha = 0.5) +
+  ggplot2::geom_smooth(se = FALSE) +
+  ggplot2::facet_wrap(metric ~ model, scales = "free") + 
+  ggplot2::labs(x = "Iteration", y = "Value", title = "CGAN Model") +
+  ggplot2::theme(plot.title = element_text(size = text_size, color = "black", face = "bold", hjust = 0.5, vjust = 0.5),
+                 axis.text.y = element_text(size = text_size, color = "black", face = "plain"),
+                 axis.text.x = element_text(size = text_size, color = "black", face = "plain"),
+                 axis.title.y = element_text(size = text_size, color = "black", face = "bold"),
+                 axis.title.x = element_text(size = text_size, color = "black", face = "bold"),
+                 axis.ticks = element_line(size = 1, color = "black", linetype = "solid"),
+                 axis.ticks.length = unit(0.1, "cm"),
+                 plot.background = element_rect(fill = "gray80", color = "black", size = 1, linetype = "solid"),
+                 panel.background = element_rect(fill = "gray90", color = "black", size = 0.5, linetype = "solid"),
+                 panel.border = element_rect(fill = NA, color = "black", size = 0.5, linetype = "solid"),
+                 panel.grid.major.x = element_line(color = "black", linetype = "dotted"),
+                 panel.grid.major.y = element_line(color = "black", linetype = "dotted"),
+                 panel.grid.minor.x = element_line(linetype = "blank"),
+                 panel.grid.minor.y = element_line(linetype = "blank"),
+                 plot.caption = element_text(size = text_size, color = "black", face = "bold", hjust = 1),
+                 legend.position = "none",
+                 strip.background = element_rect(color = "black", fill = "gray80", size = 0.5, linetype = "solid"),
+                 strip.text = element_text(size = text_size, face = "bold")) -> cgan_results_plot; cgan_results_plot
+ggplot2::ggsave(base::paste("cgan", "cgan_results.png", sep = "/"), plot = cgan_results_plot, units = "cm", width = 25, height = 25)
+
+# ------------------------------------------------------------------------------
+# https://github.com/ForesightAdamNowacki
